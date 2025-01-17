@@ -1,5 +1,5 @@
 ---
-title: "lab-2-key"
+title: "Lab 2 Ben Ladabaum"
 format: 
   html:
     code-folding: show
@@ -58,6 +58,19 @@ mdl<-lm(f1, data=df_where_column_names_come_frome)
 
 ```{r}
 # Use this chunk and any extras to complete setting up the model
+
+f1 = mass ~ bill_l + bill_d + flip_l + species + sex + island
+f2 = mass ~ bill_l + bill_d + flip_l + species + sex 
+f3 = mass ~ bill_d + flip_l + species + sex 
+
+m1_lm = lm(f1, data=penguins_clean)
+summary(m1_lm)
+m2_lm = lm(f2, data=penguins_clean)
+summary(m2_lm)
+m3_lm = lm(f3, data=penguins_clean)
+summary(m3_lm)
+
+
 ```
 
 
@@ -69,7 +82,7 @@ Use AIC to justify your model selection. What edits do you need to make in order
 ```{r}
 #| eval: false
 
-AIC(x,y,z)
+AIC(m1_lm,m2_lm,m3_lm)
 ```
 
 
@@ -78,12 +91,22 @@ AIC(x,y,z)
 Now we're going to use 10-fold cross validation to help us select the models. Write out some pseudocode to outline the process we'll need to implement.
 
 Pseudocode:
+  1) divide problem set into 10 different sets (i.e., 10 folds) via random sampling
+  2) Loop through the data 10 times. For each iteration through the loop, reserve a different set as the
+     test data. Use the remaining 9 sets as the training data.
+  3) Run 3 linear models, corresponding to our 3 models from above, on the training set
+  4) Test the model to predict the test set and compare to actual values of test set. 
+     Use Root Mean Squared Error to determine accuracy
 
-
-
-
-
-
+  for loop:
+    apply the model to each training set
+    make prediction on the test set with fitted training model
+  close loop:
+  
+  summarize RMSE to determine which model was best
+  Final model built on whole dataset
+  
+  
 
 ### Accuracy criteria
 
@@ -108,6 +131,13 @@ calc_rmse_2<-function(x,y){
   
   return(rmse)
 }
+
+x_test = c(1,3,5,6,7,9)
+y_test = c(1,4,6,2,8,8)
+
+calc_rmse(x_test,y_test)
+calc_rmse_2(x_test,y_test)
+
 ```
 
 
@@ -130,20 +160,23 @@ sample(ex,size=1)
 # we can create a random sample of any size with the size term.
 
 # Why doesn't the first line work while the second does?
-sample(ex,size=10)
+#sample(ex,size=10)
 sample(ex,size=10,replace=TRUE)
-
-#Describe in words the replace argument.
-
-
 ```
+
+Describe in words the replace argument.
+  Without sample, once you draw a number, you can't draw it again. Thus you cannot draw more than 5 times without
+  replacement. Replacement returns the number so that it is available to be picked again.
+
+
 
 Why is everybody getting different answers in the example sample? Is this a problem for reproducible datascience and will it affect our results (Like would Nathan have different model results than Yutian?)
 
 ```{r}
 #seed
+set.seed(42)
 
-
+sample(ex, size=10, replace=TRUE)
 ```
 
 
@@ -154,7 +187,8 @@ folds<-10
 
 fold_vec<-rep(1:folds,length.out=nrow(penguins_clean))
 
-penguins_fold<-penguins_clean |> #what goes here?
+penguins_fold<-penguins_clean |> 
+  mutate(group = sample(fold_vec, size = n(), replace = FALSE))
   
 
 #check to make sure the fold groups are balanced
@@ -165,7 +199,10 @@ table(penguins_fold$group)
 Create dataframes called `test_df` and `train_df` that split the penguins data into a train or test sample
 
 ```{r}
-# datasets here
+test_df = penguins_fold |>
+  filter(group==1)
+train_df = penguins_fold |>
+  filter(group!=1)
 ```
 
 
@@ -173,6 +210,12 @@ Now fit each model to the training set using the `lm()`. Name each model `traini
 
 ```{r}
 
+training_lm1 = lm(f1, data=train_df)
+#summary(training_lm1)
+training_lm2 = lm(f2, data=train_df)
+#summary(training_lm2)
+training_lm3 = lm(f3, data=train_df)
+#summary(training_lm3)
 
 
 ```
@@ -185,16 +228,18 @@ Now fit each model to the training set using the `lm()`. Name each model `traini
 
 ```{r}
 predict_test<-test_df |> 
-  mutate(model1 = predict(xxx,test_df),
-         model2 = predict(xxx,test_df),
-         model3 = predict(xxx,test_df))
+  mutate(model1 = predict(training_lm1,test_df),
+         model2 = predict(training_lm2,test_df),
+         model3 = predict(training_lm3,test_df))
 ```
 
 Calculate the RMSE of the first fold test predictions. Hint: Use summarize to condense the `predict_test` dataframe.
 
 ```{r}
 rmse_predict_test<-predict_test |> 
-  summarize(????)
+  summarize(rmse1 = calc_rmse(mass, model1),
+            rmse2 = calc_rmse(mass, model2),
+            rmse3 = calc_rmse(mass, model3))
 ```
 
 What are the results just looking at the first fold?
@@ -206,19 +251,26 @@ Our general structure works with one fold. Now we need to evaluate across all 10
 ```{r}
 
 ### initialize a blank vector
-rmse_vec<-vector(length=folds)  #Why?
+rmse_vec<-vector(mode = 'numeric', length=folds)  #Why?
 
 for( i in 1:folds){
 
   # separate into test and train
-  
+  kfold_test_df = penguins_fold |>
+    filter(group == i)
+  kfold_train_df = penguins_fold |>
+    filter(group != i)
   
   # Run for one model
+  training_lm1 = lm(f1, data=kfold_train_df)
   
   #Get the predictions from the model
+  predict_test <-kfold_test_df |> 
+  mutate(model1 = predict(training_lm1, kfold_test_df))
   
   # Summarize/calculate the rmse for that model
-  
+  kfold_rmse = predict_test |> 
+    summarise(rmse_md1 = calc_rmse(mass, model1))
   
   rmse_vec[i]<-kfold_rmse$rmse_md1
 }
@@ -233,8 +285,25 @@ Great we made a for loop for one model. Now we would have to do it again and aga
 ```{r}
 kfold_cv<-function(i,df,formula){
   
+  #split into training and test
+  kfold_train_df = df |>
+    filter(group != i)
+  kfold_test_df = df |>
+    filter(group == i)
   
+  # run model
+  kfold_lm = lm(formula, data=kfold_train_df)
   
+  # get predictions for the model
+  kfold_pred_df = kfold_test_df |>
+    mutate(md=predict(kfold_lm, kfold_test_df))
+  
+  # calculate rmse
+  
+  kfold_rmse = kfold_pred_df |>
+    summarize(rmse_md = calc_rmse(md, mass))
+  
+  return(kfold_rmse$rmse_md)
 }
 ```
 
@@ -260,8 +329,15 @@ rmse_means<-rmse_df |>
 
 Between AIC and the RMSE scores of the Cross Validation, which model does the best job of predicting penguin bodymass?
 
+Model 2
 
 The final step is to run the selected model on all the data. Fit a final model and provide the summary table.
+
+```{r}
+  best_model = lm(f2, penguins_clean)
+  summary(best_model)
+```
+
 
 
 Render your document, commit changes, and push to github.
